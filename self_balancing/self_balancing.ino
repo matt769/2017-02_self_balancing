@@ -1,4 +1,10 @@
+// robot must be held in upright position during startup in order to determin its target angle (currently commented out)
+// min PWM that the motors will react to is about 80
+
+
+
 #include <I2C.h>
+#include <PID.h>
 
 // sensor readings and calculations
 const byte MPU_ADDRESS = 104; // I2C Address of MPU-6050
@@ -64,6 +70,31 @@ const byte GYRO_YOUT_L = 70;   //[7:0]
 const byte GYRO_ZOUT_H = 71;   // [15:8]
 const byte GYRO_ZOUT_L = 72;   //[7:0]
 
+// Motor functionality
+const int LeftForwardPin = 5;
+const int LeftReversePin = 6;
+const int RightForwardPin = 11;
+const int RightReversePin = 10;
+const int OutputVal = 255;
+
+// PID controller
+PID pidY; // with current orientation, Z corresponds to forwards/backwards
+
+// balance
+float target = 80;  //not zero, due to way sensor is orientated // may change later
+float actual;
+float output;
+float lastOutput;
+int modOutput;
+long lastCalc = 0;
+long nowCalc;
+int modOutput2;
+int deadZone = 10;
+
+
+
+
+
 ///////////////////////////////////////////////////////////////////////////////////
 //              SETUP
 
@@ -71,6 +102,18 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("Starting setup..."));
 
+// Motor functionality
+  pinMode(LeftForwardPin, OUTPUT);
+  pinMode(LeftReversePin, OUTPUT);
+  pinMode(RightForwardPin, OUTPUT);
+  pinMode(RightReversePin, OUTPUT);
+
+  // PID controller
+  pidY.setFactors(20.0f,0.0f,0.0f);
+  pidY.setLimits(-255,255);
+
+  
+  // I2C setup
   I2c.begin();
   I2c.timeOut(50);
   I2c.setSpeed(1);  // fast (400Hz)
@@ -98,13 +141,41 @@ void setup() {
     updateBuffers();
   }
 
-  calibrateGyro(5000);
+//  calibrateGyro(5000);
+  GyXOffset = -292;
+  GyYOffset = -342;
+  GyZOffset = -449;
+
   
 //   initialise angles
   smoothData();
   calcAnglesAccel();
   initialiseCurrentGyroAngles();
   mixAngles();
+
+  // set target angle
+//  float tmp = 0;
+//  int tmpCnt = 0;
+//  for(int k = 0;k<500;k++){
+//      readMainSensors(MPU_ADDRESS);
+//      if(sensorRead){
+//        updateBuffers();
+//        smoothData();
+//        calcAnglesAccel();
+//        calcGyroChange();
+//        updateGyroAngles();
+//        mixAngles();
+//
+//        tmp += currentMixedAngle.y;
+//        
+//        tmpCnt++;
+//       }   
+//  }
+//  target = (tmp * RAD_TO_DEG)/tmpCnt;
+//  Serial.println(tmp);
+//  Serial.println(tmpCnt);
+  target = 83.5f;
+  Serial.print(F("Target angle to maintain"));Serial.println(target);
     
   Serial.println(F("Setup complete"));
 }
@@ -128,14 +199,50 @@ void loop() {
       calcGyroChange();
       updateGyroAngles();
       mixAngles();
-    sendSerialDataFloat(currentMixedAngle.x * RAD_TO_DEG,currentMixedAngle.y * RAD_TO_DEG,currentMixedAngle.z * RAD_TO_DEG);
+//    sendSerialDataFloat(currentMixedAngle.x * RAD_TO_DEG,currentMixedAngle.y * RAD_TO_DEG,currentMixedAngle.z * RAD_TO_DEG);
     }   
   interuptReceived = false;
   }
   // FINISH ANGLE CALCULATION
 
 
+  nowCalc = millis();
+  if(nowCalc-lastCalc > 100){  
+    lastCalc = nowCalc;
+    actual = currentMixedAngle.y * RAD_TO_DEG;
+//    Serial.print(actual);Serial.print("\t");
+    output = pidY.calculate(target,actual);
+//    Serial.print(output);Serial.print("\t");
+    
+    // if motor changing direction then stop first
+    if((output>0 && lastOutput<0) || (output<0 && lastOutput>0)){
+      Stop();
+    }
+  
+    modOutput = (int)output;
+    Serial.println(modOutput);
 
+    if(abs(modOutput)>deadZone){
+  
+      if(modOutput>0){
+  //      GoForwards(modOutput);
+  //        GoForwards(max(100,min(modOutput,255)));
+  //        GoForwards(min(modOutput,255));
+          GoForwards(max(modOutput,100));
+  
+  
+      }
+      else if(modOutput<0){
+  //      GoBackwards(-modOutput);
+  //      GoBackwards(min(-modOutput,255));
+  //      GoBackwards(max(100,min(-modOutput,255)));
+          GoBackwards(max(-modOutput,100));
+      }
+    
+      lastOutput = output;
+      
+    }
+  }
  }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -144,6 +251,8 @@ void loop() {
 void mpuInterupt(){
   interuptReceived = true;
 }
+
+
 
 ///////////////////////////////////////////////////////////////////////////////////
 // OUTPUT
@@ -425,34 +534,44 @@ byte modifyBits(byte originalByte, byte startingReplacementBit, byte noReplaceme
 
 
 ///////////////////////////////////////////////////////////////////////////////////
-//                TESTING
+//              MOTOR FUNCTIONALITY
 
-void testLowPassFilter(){
-    // NB this will leave the LPF on 6 - it will not reset to state before test
-    // but power off/on will anyway (I think)
-  for(int i=0;i<7;i++){ // all valid values for LPF (0-6)
-    writeBitsNew(MPU_ADDRESS,CONFIG,0,3,i);
-    long sum=0;
-    long change=0;
-    int16_t lastReading;
-    int16_t reading;
-    readMainSensors(MPU_ADDRESS);
-    lastReading = AcX;
-    long timeStart = millis();
-    for(int reps=0;reps<10000;reps++){
-      readMainSensors(MPU_ADDRESS);
-      //do something with reading e.g. summarise
-        reading = GyX;
-        sum += reading;
-        change += abs(reading - lastReading);
-    }
-    long duration = millis() - timeStart;
-    Serial.print("LPFCONFIG:");Serial.println(CONFIG);
-    Serial.println(sum/10000);
-    Serial.println(change/10000);
-    Serial.println(duration);
-  }
+void GoForwards(int pwm) {
+      analogWrite(LeftForwardPin, pwm);
+      analogWrite(LeftReversePin, 0);
+      analogWrite(RightForwardPin, pwm);
+      analogWrite(RightReversePin, 0);
 }
+
+void GoBackwards(int pwm) {
+      analogWrite(LeftForwardPin, 0);
+      analogWrite(LeftReversePin, pwm);
+      analogWrite(RightForwardPin, 0);
+      analogWrite(RightReversePin, pwm);
+}
+
+
+void Stop() {
+      analogWrite(LeftForwardPin, 0);
+      analogWrite(LeftReversePin, 0);
+      analogWrite(RightForwardPin, 0);
+      analogWrite(RightReversePin, 0);
+}
+
+//void TurnLeft(int pwm) {
+//      analogWrite(LeftForwardPin, 0);
+//      analogWrite(LeftReversePin, pwm);
+//      analogWrite(RightForwardPin, pwm);
+//      analogWrite(RightReversePin, 0);
+//}
+//
+//void TurnRight(int pwm) {
+//      analogWrite(LeftForwardPin, pwm);
+//      analogWrite(LeftReversePin, 0);
+//      analogWrite(RightForwardPin, 0);
+//      analogWrite(RightReversePin, pwm);
+//}
+
 
 
 
