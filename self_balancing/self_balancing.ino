@@ -90,6 +90,7 @@ long lastCalc = 0;
 long nowCalc;
 int modOutput2;
 int deadZone = 100;
+float angleDeadzone = 1.0f;
 
 
 
@@ -205,43 +206,39 @@ void loop() {
   }
   // FINISH ANGLE CALCULATION
 
+//  Serial.println(millis());
 
   nowCalc = millis();
   if(nowCalc-lastCalc > 10){  
     lastCalc = nowCalc;
     actual = currentMixedAngle.y * RAD_TO_DEG;
 //    Serial.print(actual);Serial.print("\t");
+  // check if within 'deadzone'
+  // only issue might be if robot is moving back up, ideally don't want it to go all the way through
+  if(abs(actual-target)>angleDeadzone){
     output = pidY.calculate(target,actual);
 //    Serial.print(output);Serial.print("\t");
-    
+
     // if motor changing direction then stop first
     if((output>0 && lastOutput<0) || (output<0 && lastOutput>0)){
       Stop();
     }
   
     modOutput = (int)output;
-    Serial.println(modOutput);
+//    Serial.println(modOutput);
 
-    if(abs(modOutput)>deadZone){
-  
       if(modOutput>0){
-  //      GoForwards(modOutput);
-  //        GoForwards(max(100,min(modOutput,255)));
-  //        GoForwards(min(modOutput,255));
           GoForwards(max(modOutput,100));
-  
   
       }
       else if(modOutput<0){
-  //      GoBackwards(-modOutput);
-  //      GoBackwards(min(-modOutput,255));
-  //      GoBackwards(max(100,min(-modOutput,255)));
           GoBackwards(max(-modOutput,100));
       }
     
       lastOutput = output;
       
-    }
+  }
+    
   }
  }
 
