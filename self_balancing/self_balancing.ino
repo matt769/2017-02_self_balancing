@@ -81,7 +81,7 @@ const int OutputVal = 255;
 PID pidY; // with current orientation, Z corresponds to forwards/backwards
 
 // balance
-float target = 80;  //not zero, due to way sensor is orientated // may change later
+float target = 83.3f;  //not zero, due to way sensor is orientated // may change later
 float actual;
 float output;
 float lastOutput;
@@ -89,7 +89,7 @@ int modOutput;
 long lastCalc = 0;
 long nowCalc;
 int modOutput2;
-int deadZone = 10;
+int deadZone = 100;
 
 
 
@@ -109,7 +109,7 @@ void setup() {
   pinMode(RightReversePin, OUTPUT);
 
   // PID controller
-  pidY.setFactors(20.0f,0.0f,0.0f);
+  pidY.setFactors(100.0f,0.0f,0.0f);
   pidY.setLimits(-255,255);
 
   
@@ -174,7 +174,7 @@ void setup() {
 //  target = (tmp * RAD_TO_DEG)/tmpCnt;
 //  Serial.println(tmp);
 //  Serial.println(tmpCnt);
-  target = 83.5f;
+
   Serial.print(F("Target angle to maintain"));Serial.println(target);
     
   Serial.println(F("Setup complete"));
@@ -207,7 +207,7 @@ void loop() {
 
 
   nowCalc = millis();
-  if(nowCalc-lastCalc > 100){  
+  if(nowCalc-lastCalc > 10){  
     lastCalc = nowCalc;
     actual = currentMixedAngle.y * RAD_TO_DEG;
 //    Serial.print(actual);Serial.print("\t");
