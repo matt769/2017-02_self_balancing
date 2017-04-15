@@ -81,7 +81,8 @@ const int OutputVal = 255;
 PID pidY; // with current orientation, Z corresponds to forwards/backwards
 
 // balance
-float target = 83.3f;  //not zero, due to way sensor is orientated // may change later
+//float target = 83.3f;  //not zero, due to way sensor is orientated // may change later
+float target = 2.0f;
 float actual;
 float output;
 float lastOutput;
@@ -90,7 +91,7 @@ long lastCalc = 0;
 long nowCalc;
 int modOutput2;
 int deadZone = 100;
-float angleDeadzone = 1.0f;
+float angleDeadzone = 0.0f;
 
 
 
@@ -234,11 +235,16 @@ void loop() {
 //    Serial.println(modOutput);
 
       if(modOutput>0){
-          GoForwards(max(modOutput,100));
+          modOutput = min(modOutput,255); //cap at 255
+          modOutput = map(modOutput,0,255,80,255); // remap lowest output to 80
+          GoForwards(modOutput);
   
       }
       else if(modOutput<0){
-          GoBackwards(max(-modOutput,100));
+          modOutput = -modOutput;
+          modOutput = min(modOutput,255); //cap at 255
+          modOutput = map(modOutput,0,255,80,255); // remap lowest output to 80
+          GoBackwards(modOutput);
       }
     
       lastOutput = output;
