@@ -203,16 +203,22 @@ void loop() {
 //    sendSerialDataFloat(currentMixedAngle.x * RAD_TO_DEG,currentMixedAngle.y * RAD_TO_DEG,currentMixedAngle.z * RAD_TO_DEG);
     }   
   interuptReceived = false;
+
   }
   // FINISH ANGLE CALCULATION
 
-//  Serial.println(millis());
+
 
   nowCalc = millis();
-  if(nowCalc-lastCalc > 10){  
+  if(nowCalc-lastCalc > 50){  
+      
+//      Serial.println(millis());
+      
     lastCalc = nowCalc;
     actual = currentMixedAngle.y * RAD_TO_DEG;
 //    Serial.print(actual);Serial.print("\t");
+//    Serial.println(actual);
+    
   // check if within 'deadzone'
   // only issue might be if robot is moving back up, ideally don't want it to go all the way through
   if(abs(actual-target)>angleDeadzone){
