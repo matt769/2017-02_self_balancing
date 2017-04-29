@@ -192,17 +192,29 @@ uint16_t time2 = 0;
 uint16_t time3 = 0;
 int testCount = 0;
 
+uint16_t time4 = 0;
+uint16_t time5 = 0;
+int testCount2 = 0;
+
 void loop() {
+  if(millis()-time4>1000){
+    Serial.println(testCount2);
+    testCount2 = 0;
+    time4=millis();
+  }
+
   
   // START ANGLE CALCULATION
   if(interuptReceived){
 //    if(getInteruptStatus(MPU_ADDRESS) & 1 == 1) {
       readMainSensors(MPU_ADDRESS);
 //    }
-    if(sensorRead){ //following calcs take ~980us (seems
+    if(sensorRead){ //following calcs take ~980us (seems pretty short)
+                    // and this section runs 500 times per second (does that sound right?)
+      testCount2 += 1;
       updateBuffers();  // 40us
       smoothData(); // 128us
-      calcAnglesAccel(); // 600us
+      calcAnglesAccel(); // 600us - although could this be reduced?
       calcGyroChange(); // 136us
       updateGyroAngles(); // 36us
 
