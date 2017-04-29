@@ -111,7 +111,7 @@ void setup() {
   pinMode(RightReversePin, OUTPUT);
 
   // PID controller
-  pidY.setFactors(100.0f,0.0f,0.0f);
+  pidY.setFactors(30.0f,0.0f,0.0f);
   pidY.setLimits(-255,255);
 
   
@@ -243,7 +243,7 @@ void loop() {
 
 
   nowCalc = millis();
-  if(nowCalc-lastCalc > 50){  
+  if(nowCalc-lastCalc > 0){  
       
 //      Serial.println(millis());
       
@@ -252,9 +252,6 @@ void loop() {
 //    Serial.print(actual);Serial.print("\t");
 //    Serial.println(actual);
     
-  // check if within 'deadzone'
-  // only issue might be if robot is moving back up, ideally don't want it to go all the way through
-  if(abs(actual-target)>angleDeadzone){
     output = pidY.calculate(target,actual);
 //    Serial.print(output);Serial.print("\t");
 
@@ -268,20 +265,18 @@ void loop() {
 
       if(modOutput>0){
           modOutput = min(modOutput,255); //cap at 255
-          modOutput = map(modOutput,0,255,80,255); // remap lowest output to 80
+          modOutput = map(modOutput,0,255,100,255); // remap lowest output to 80
           GoForwards(modOutput);
   
       }
       else if(modOutput<0){
           modOutput = -modOutput;
           modOutput = min(modOutput,255); //cap at 255
-          modOutput = map(modOutput,0,255,80,255); // remap lowest output to 80
+          modOutput = map(modOutput,0,255,100,255); // remap lowest output to 80
           GoBackwards(modOutput);
       }
     
       lastOutput = output;
-      
-  }
     
   }
  }
