@@ -118,7 +118,7 @@ void setup() {
   // I2C setup
   I2c.begin();
   I2c.timeOut(50);
-  I2c.setSpeed(1);  // fast (400Hz)
+  I2c.setSpeed(1);  // 1 = fast (400Hz)
 
   // check MPU connected
   byte MPU_ADDRESS_CHECK = readRegister(MPU_ADDRESS,WHO_AM_I);
@@ -187,6 +187,11 @@ void setup() {
 ///////////////////////////////////////////////////////////////////////////////////
 //                  MAIN
 
+uint16_t time1 = 0;
+uint16_t time2 = 0;
+uint16_t time3 = 0;
+int testCount = 0;
+
 void loop() {
   
   // START ANGLE CALCULATION
@@ -194,13 +199,27 @@ void loop() {
 //    if(getInteruptStatus(MPU_ADDRESS) & 1 == 1) {
       readMainSensors(MPU_ADDRESS);
 //    }
-    if(sensorRead){
-      updateBuffers();
-      smoothData();
-      calcAnglesAccel();
-      calcGyroChange();
-      updateGyroAngles();
-      mixAngles();
+    if(sensorRead){ //following calcs take ~980us (seems
+      updateBuffers();  // 40us
+      smoothData(); // 128us
+      calcAnglesAccel(); // 600us
+      calcGyroChange(); // 136us
+      updateGyroAngles(); // 36us
+
+      mixAngles();  // 84us
+
+      
+//      time1 = micros(); // start time
+//      time2 = micros(); // finish time
+//      testCount += 1;
+//      time3 += (time2 - time1);
+//      if(testCount=1000){
+//        Serial.println(time3);
+//        testCount = 0;
+//        time3 = 0;
+//      }
+      
+      
 //    sendSerialDataFloat(currentMixedAngle.x * RAD_TO_DEG,currentMixedAngle.y * RAD_TO_DEG,currentMixedAngle.z * RAD_TO_DEG);
     }   
   interuptReceived = false;
@@ -208,6 +227,7 @@ void loop() {
   }
   // FINISH ANGLE CALCULATION
 
+  
 
 
   nowCalc = millis();
