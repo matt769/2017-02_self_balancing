@@ -144,9 +144,12 @@ void setup() {
   }
 
 //  calibrateGyro(5000);
-  GyXOffset = -292;
-  GyYOffset = -342;
-  GyZOffset = -449;
+//  GyXOffset = -292;
+//  GyYOffset = -342;
+//  GyZOffset = -449;
+  GyXOffset = -343;
+  GyYOffset = -232;
+  GyZOffset = 28;
 
   
 //   initialise angles
