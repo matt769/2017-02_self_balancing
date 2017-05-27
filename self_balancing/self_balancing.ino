@@ -189,7 +189,7 @@ void setup() {
   Serial.print(F("Target angle to maintain: ")); Serial.println(target);
 
   myPID.SetOutputLimits(-255, 255);
-  myPID.SetSampleTime(5);
+  myPID.SetSampleTime(10);
   myPID.SetMode(AUTOMATIC);
 
   
@@ -227,8 +227,6 @@ void loop() {
       updateSettings();
     }
 
-    nowCalc = millis();
-    if (nowCalc - lastCalc > 20) {
 
       lastCalc = nowCalc;
       actual = ypr[1] * 180 / M_PI;
@@ -270,8 +268,6 @@ void loop() {
 //      Serial.println(modOutput);
 
       lastOutput = output;
-
-    }
 
     // END MY CODE
     /////////////////////////////////////////
