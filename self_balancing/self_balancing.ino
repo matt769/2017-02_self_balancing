@@ -62,11 +62,11 @@ const int RightForwardPin = 10;
 const int RightReversePin = 11;
 const int LeftPwmPin = 5;
 const int RightPwmPin = 6;
-const int MOTOR_MIN_PWM = 110;
+const int MOTOR_MIN_PWM = 130;
 
 
 // balance + PID controller
-double target = 6.5;
+double target = 10.0;
 double actual;
 double output;
 double lastOutput;
@@ -81,7 +81,7 @@ char setting;
 
 
 //Specify the links and initial tuning parameters
-double kP=5, kI=0, kD=0;
+double kP=33, kI=3, kD=0.12;
 PID myPID(&actual, &output, &target, kP, kI, kD, REVERSE);
 
 
@@ -122,16 +122,22 @@ void setup() {
   mpu.setXGyroOffset(-343);
   mpu.setYGyroOffset(-232);
   mpu.setZGyroOffset(28);
-  mpu.setZAccelOffset(1788); // this is what was in JR code - not sure what mine is or how to find out
+  mpu.setZAccelOffset(847);
+  target = 10.0;
 
 // using the calibrate MPU sketch
 //  mpu.setXGyroOffset(-83);
 //  mpu.setYGyroOffset(-55);
 //  mpu.setZGyroOffset(10);
+//  mpu.setXAccelOffset(-1682);
+//  mpu.setYAccelOffset(-2454);
 //  mpu.setZAccelOffset(847);
+//  target = -1.5;
 
 
-  // low pass filter
+
+
+//   low pass filter
   byte dlpf = 0;
   mpu.setDLPFMode(dlpf);
   Serial.print(F("DLPF; ")); Serial.println(dlpf);
@@ -172,18 +178,12 @@ void setup() {
   pinMode(LeftPwmPin, OUTPUT);
   pinMode(RightPwmPin, OUTPUT);
 
-//  // PID controller - OLD
-//  kP = 5.0f;
-//  kI = 0.0f;
-//  kD = 0.0f;
-//  pidY.setFactors(kP, kI, kD);
-//  pidY.setLimits(-255, 255);
-  
   Serial.print(F("Target angle to maintain: ")); Serial.println(target);
 
   myPID.SetOutputLimits(-255, 255);
-  myPID.SetSampleTime(20);
+  myPID.SetSampleTime(5);
   myPID.SetMode(AUTOMATIC);
+
   
   Serial.println(F("Setup complete"));
 }
@@ -332,11 +332,11 @@ void updateSettings() {
         Serial.println(kI);
         break;
       case 'd':
-        kD += 0.5;
+        kD += 0.01;
         Serial.println(kD);
         break;
       case 'c':
-        kD -= 0.5;
+        kD -= 0.01;
         Serial.println(kD);
         break;
       case 't':
