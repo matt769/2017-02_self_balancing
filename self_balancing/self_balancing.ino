@@ -73,6 +73,10 @@ double lastOutput;
 int modOutput;
 long lastCalc = 0;
 long nowCalc;
+double recoverableRange = 30.0;
+byte UPRIGHT = 1;
+byte LYING_DOWN = 0;
+byte STATE = LYING_DOWN;
 
 //PID pidY; // with current orientation, Y corresponds to forwards/backwards
 //float kP, kI, kD;
@@ -205,15 +209,6 @@ void setup() {
 
 void loop() {
 
-  //  if(countLoop > 100) {
-  //    countLoop = 0;
-  //    lastLoop = millis();
-  //    Serial.print("Milliseconds for 100 main loops: ");
-  //    Serial.println(lastLoop - firstLoop);
-  //    firstLoop = lastLoop;
-  //  }
-  //  countLoop += 1;
-
   // if programming failed, don't try to do anything
   if (!dmpReady) return;
 
@@ -227,11 +222,31 @@ void loop() {
       updateSettings();
     }
 
-
-      lastCalc = nowCalc;
+      // pitch angle in degrees
       actual = ypr[1] * 180 / M_PI;
       //    Serial.print(actual);Serial.print("\t");
 //                  Serial.println(actual);
+
+
+      // check that robot is in a recoverable position (i.e. close to upright)
+
+      if (actual>(target-recoverableRange) && actual<(target+recoverableRange)){
+        if(STATE==LYING_DOWN){
+          myPID.SetMode(AUTOMATIC); // turn PID back on
+        }
+        STATE = UPRIGHT;
+      }
+    else {
+        STATE = LYING_DOWN;
+        myPID.SetMode(MANUAL);  // turn off, don't want to accumulate errors
+                                // not certain this is working properly, seems to have offset when put down and then back upright
+        Stop();
+      }
+//      Serial.print(actual);Serial.print("\t");
+//      Serial.print(target-recoverableRange);Serial.print("\t");
+//      Serial.println(STATE);
+
+      if(STATE == UPRIGHT){
       myPID.Compute();
 //      output = pidY.calculate(target, actual);
       //    Serial.print(output);Serial.print("\t");
@@ -268,6 +283,7 @@ void loop() {
 //      Serial.println(modOutput);
 
       lastOutput = output;
+      }
 
     // END MY CODE
     /////////////////////////////////////////
@@ -301,7 +317,7 @@ void loop() {
     // display Euler angles in degrees
     mpu.dmpGetQuaternion(&q, fifoBuffer);
     mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+    mpu.dmpGetPitch(ypr, &q, &gravity);
 
   }
 }
@@ -351,6 +367,14 @@ void updateSettings() {
         target -= 0.5;
         Serial.println(target);
         break;
+      case 'w':
+        target += 2;
+        Serial.println(target);
+        break;
+      case 's':
+        target -= 2;
+        Serial.println(target);
+        break;       
     }
 //    pidY.setFactors(kP, kI, kD);
     myPID.SetTunings(kP, kI, kD);
