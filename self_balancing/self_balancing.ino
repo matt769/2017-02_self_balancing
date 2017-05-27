@@ -62,7 +62,7 @@ const int RightForwardPin = 10;
 const int RightReversePin = 11;
 const int LeftPwmPin = 5;
 const int RightPwmPin = 6;
-const int MOTOR_MIN_PWM = 130;
+const int MOTOR_MIN_PWM = 110;
 
 
 // balance + PID controller
@@ -168,6 +168,14 @@ void setup() {
     Serial.print(devStatus);
     Serial.println(F(")"));
   }
+
+  // allow MPU to settle
+  unsigned long tmp;
+  tmp = millis();
+  while(millis()-tmp<3000){
+    
+  }
+  mpu.resetFIFO();
 
 
   // Motor functionality
