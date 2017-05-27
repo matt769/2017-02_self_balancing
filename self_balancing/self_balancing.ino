@@ -1,574 +1,377 @@
-// robot must be held in upright position during startup in order to determin its target angle (currently commented out)
-// min PWM that the motors will react to is about 80
+//try using Jeff Rowburg code to get angle
+// based on MPU6050_DMP6.ino sketch
+// I used a new MPU6050 because I needed to change the orientation - the pitch wasn't calculated well as it was
+// I have recalculated gyro offsets
+
+// try to copy this code:
+// http://www.instructables.com/id/2-Wheel-Self-Balancing-Robot-by-using-Arduino-and-/
+
+
+#include <PID_v1.h>
+
+// Based on MPU_6050_DMP6 sketch by Jeff Rowberg
+
+// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
+// for both classes must be in the include path of your project
+#include "I2Cdev.h"
+
+#include "MPU6050_6Axis_MotionApps20.h"
+//#include "MPU6050.h" // not necessary if using MotionApps include file
+
+// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
+// is used in I2Cdev.h
+#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+#include "Wire.h"
+#endif
+
+// class default I2C address is 0x68 - AD0 low = 0x68
+MPU6050 mpu;
+
+// MPU control/status vars
+bool dmpReady = false;  // set true if DMP init was successful
+uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
+uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
+uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
+uint16_t fifoCount;     // count of all bytes currently in FIFO
+uint8_t fifoBuffer[64]; // FIFO storage buffer
+
+// orientation/motion vars
+Quaternion q;           // [w, x, y, z]         quaternion container
+VectorFloat gravity;    // [x, y, z]            gravity vector
+float euler[3];         // [psi, theta, phi]    Euler angle container
+float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
 
 
-#include <I2C.h>
-#include <PID.h>
+// ================================================================
+// ===               INTERRUPT DETECTION ROUTINE                ===
+// ================================================================
 
-// sensor readings and calculations
-const byte MPU_ADDRESS = 104; // I2C Address of MPU-6050
-int16_t AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ, GyXOffset, GyYOffset, GyZOffset;  // measurement values
-float valAcX,valAcY,valAcZ,valTmp,valGyX,valGyY,valGyZ; // calculated values e.g. g (for accel) and m/s^2 (for gyro)
-# define bufferSize 20
-int16_t bufferAcX[bufferSize], bufferAcY[bufferSize], bufferAcZ[bufferSize], bufferGyX[bufferSize], bufferGyY[bufferSize], bufferGyZ[bufferSize], bufferTime[bufferSize];
-int bufferPos = 0;
-int lastBufferPos = 0;
-long bufferAcXSum = 0, bufferAcYSum = 0, bufferAcZSum = 0, bufferGyXSum = 0, bufferGyYSum = 0, bufferGyZSum = 0;
-float accelRes = 2.0f / 32768.0f;
-float gyroRes = 250.0f / 32768.0f;
-uint16_t lastReadingTime, thisReadingTime, minReadInterval = 50; // for timings
-float mixParam = 0.9;
-unsigned long last = 0;
-unsigned long now = 0;
-//const float RAD_TO_DEG = (float)360 / (2 * 3.14159265359);  // this is actually already defined in arduino.h
-// note: if need to pass these to functions then must have those functions in additional .h file
-struct angles {float x; float y; float z;};
-angles currentMixedAngle;
-angles currentAccelAngle;
-angles currentGyroAngle;
-angles changeGyroAngle;
-angles currentAngle;
-
-// interupts and process status flags
-volatile bool interuptReceived = false;
-byte intPin = 2;
-byte intStatus;
-bool sensorRead = false;
-byte i2cTimeout = 0;
-bool sensorsRead = false;
-
-// other
-uint16_t counter = 0;
-bool DEBUG = false;
-bool SERIAL_PRINT = false;
-
-
+volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
+void dmpDataReady() {
+  mpuInterrupt = true;
+}
 
 // MPU Register addresses
-const byte WHO_AM_I = 117;
-const byte PWR_MGMT_1 = 107;   // Power management
-const byte CONFIG = 26;
-const byte FS_SEL = 27; //  Gyro config
-const byte AFS_SEL = 28; //  Accelerometer config
-const byte INT_PIN_CFG = 55; // Interupt pin config
-const byte INT_ENABLE = 56; // Interupt enable
-const byte INT_STATUS = 58; // Interupt status
-
-const byte ACCEL_XOUT_H = 59;   // [15:8]
-const byte ACCEL_XOUT_L = 60;   //[7:0]
-const byte ACCEL_YOUT_H = 61;   // [15:8]
-const byte ACCEL_YOUT_L = 62;   //[7:0]
-const byte ACCEL_ZOUT_H = 63;   // [15:8]
-const byte ACCEL_ZOUT_L = 64;   //[7:0]
-const byte TEMP_OUT_H = 65;
-const byte TEMP_OUT_L = 66;
-const byte GYRO_XOUT_H = 67;  // [15:8]
-const byte GYRO_XOUT_L = 68;   //[7:0]
-const byte GYRO_YOUT_H = 69;   // [15:8]
-const byte GYRO_YOUT_L = 70;   //[7:0]
-const byte GYRO_ZOUT_H = 71;   // [15:8]
-const byte GYRO_ZOUT_L = 72;   //[7:0]
+// all covered in I2Cdec now
 
 // Motor functionality
-const int LeftForwardPin = 5;
-const int LeftReversePin = 6;
-const int RightForwardPin = 11;
-const int RightReversePin = 10;
-const int OutputVal = 255;
+const int LeftForwardPin = 9;
+const int LeftReversePin = 8;
+const int RightForwardPin = 10;
+const int RightReversePin = 11;
+const int LeftPwmPin = 5;
+const int RightPwmPin = 6;
+const int MOTOR_MIN_PWM = 110;
 
-// PID controller
-PID pidY; // with current orientation, Z corresponds to forwards/backwards
 
-// balance
-//float target = 83.3f;  //not zero, due to way sensor is orientated // may change later
-float target = 2.0f;
-float actual;
-float output;
-float lastOutput;
+// balance + PID controller
+double target = 6.5;
+double actual;
+double output;
+double lastOutput;
 int modOutput;
 long lastCalc = 0;
 long nowCalc;
-int modOutput2;
-int deadZone = 100;
-float angleDeadzone = 0.0f;
+
+//PID pidY; // with current orientation, Y corresponds to forwards/backwards
+//float kP, kI, kD;
+bool newSetting = false;
+char setting;
 
 
+//Specify the links and initial tuning parameters
+double kP=5, kI=0, kD=0;
+PID myPID(&actual, &output, &target, kP, kI, kD, REVERSE);
 
+
+// check loop timings
+unsigned long firstLoop = 0;
+unsigned long lastLoop = 0;
+int countLoop = 0;
 
 
 ///////////////////////////////////////////////////////////////////////////////////
 //              SETUP
 
 void setup() {
-  Serial.begin(115200);
-  Serial.println(F("Starting setup..."));
+  // join I2C bus (I2Cdev library doesn't do this automatically)
+#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+  Wire.begin();
+  TWBR = 24; // 400kHz I2C clock (200kHz if CPU is 8MHz)
+#elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
+  Fastwire::setup(400, true);
+#endif
 
-// Motor functionality
+  // initialize serial communication
+  Serial.begin(115200);
+
+  // initialize device
+  Serial.println(F("Initializing I2C devices..."));
+  mpu.initialize();
+
+  // verify connection
+  Serial.println(F("Testing device connections..."));
+  Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+
+  // load and configure the DMP
+  Serial.println(F("Initializing DMP..."));
+  devStatus = mpu.dmpInitialize();
+
+  // supply your own gyro offsets here, scaled for min sensitivity
+  mpu.setXGyroOffset(-343);
+  mpu.setYGyroOffset(-232);
+  mpu.setZGyroOffset(28);
+  mpu.setZAccelOffset(1788); // this is what was in JR code - not sure what mine is or how to find out
+
+// using the calibrate MPU sketch
+//  mpu.setXGyroOffset(-83);
+//  mpu.setYGyroOffset(-55);
+//  mpu.setZGyroOffset(10);
+//  mpu.setZAccelOffset(847);
+
+
+  // low pass filter
+  byte dlpf = 0;
+  mpu.setDLPFMode(dlpf);
+  Serial.print(F("DLPF; ")); Serial.println(dlpf);
+
+  // make sure it worked (returns 0 if so)
+  if (devStatus == 0) {
+    // turn on the DMP, now that it's ready
+    Serial.println(F("Enabling DMP..."));
+    mpu.setDMPEnabled(true);
+
+    // enable Arduino interrupt detection
+    Serial.println(F("Enabling interrupt detection (Arduino external interrupt 0)..."));
+    attachInterrupt(0, dmpDataReady, RISING);
+    mpuIntStatus = mpu.getIntStatus();
+
+    // set our DMP Ready flag so the main loop() function knows it's okay to use it
+    Serial.println(F("DMP ready! Waiting for first interrupt..."));
+    dmpReady = true;
+
+    // get expected DMP packet size for later comparison
+    packetSize = mpu.dmpGetFIFOPacketSize();
+  } else {
+    // ERROR!
+    // 1 = initial memory load failed
+    // 2 = DMP configuration updates failed
+    // (if it's going to break, usually the code will be 1)
+    Serial.print(F("DMP Initialization failed (code "));
+    Serial.print(devStatus);
+    Serial.println(F(")"));
+  }
+
+
+  // Motor functionality
   pinMode(LeftForwardPin, OUTPUT);
   pinMode(LeftReversePin, OUTPUT);
   pinMode(RightForwardPin, OUTPUT);
   pinMode(RightReversePin, OUTPUT);
+  pinMode(LeftPwmPin, OUTPUT);
+  pinMode(RightPwmPin, OUTPUT);
 
-  // PID controller
-  pidY.setFactors(30.0f,0.0f,0.0f);
-  pidY.setLimits(-255,255);
-
+//  // PID controller - OLD
+//  kP = 5.0f;
+//  kI = 0.0f;
+//  kD = 0.0f;
+//  pidY.setFactors(kP, kI, kD);
+//  pidY.setLimits(-255, 255);
   
-  // I2C setup
-  I2c.begin();
-  I2c.timeOut(50);
-  I2c.setSpeed(1);  // 1 = fast (400Hz)
+  Serial.print(F("Target angle to maintain: ")); Serial.println(target);
 
-  // check MPU connected
-  byte MPU_ADDRESS_CHECK = readRegister(MPU_ADDRESS,WHO_AM_I);
-  if(MPU_ADDRESS_CHECK==MPU_ADDRESS){
-    Serial.println(F("MPU-6050 available"));
-  }
-  else {
-    Serial.println(F("ERROR: MPU-6050 NOT FOUND"));
-    Serial.println(F("Try reseting..."));
-    while(1);
-  }
-
-  // set up interupt 0 (which is on pin 2)
-  attachInterrupt(0,mpuInterupt,RISING);
-
-  // all config required for MPU
-  setupMPU();
+  myPID.SetOutputLimits(-255, 255);
+  myPID.SetSampleTime(20);
+  myPID.SetMode(AUTOMATIC);
   
-//   fill buffers
-  for (int i = 0; i < bufferSize + 10; i++){
-    readMainSensors(MPU_ADDRESS);
-    updateBuffers();
-  }
-
-//  calibrateGyro(5000);
-//  GyXOffset = -292;
-//  GyYOffset = -342;
-//  GyZOffset = -449;
-  GyXOffset = -343;
-  GyYOffset = -232;
-  GyZOffset = 28;
-
-  
-//   initialise angles
-  smoothData();
-  calcAnglesAccel();
-  initialiseCurrentGyroAngles();
-  mixAngles();
-
-  // set target angle
-//  float tmp = 0;
-//  int tmpCnt = 0;
-//  for(int k = 0;k<500;k++){
-//      readMainSensors(MPU_ADDRESS);
-//      if(sensorRead){
-//        updateBuffers();
-//        smoothData();
-//        calcAnglesAccel();
-//        calcGyroChange();
-//        updateGyroAngles();
-//        mixAngles();
-//
-//        tmp += currentMixedAngle.y;
-//        
-//        tmpCnt++;
-//       }   
-//  }
-//  target = (tmp * RAD_TO_DEG)/tmpCnt;
-//  Serial.println(tmp);
-//  Serial.println(tmpCnt);
-
-  Serial.print(F("Target angle to maintain"));Serial.println(target);
-    
   Serial.println(F("Setup complete"));
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////
 //                  MAIN
 
-uint16_t time1 = 0;
-uint16_t time2 = 0;
-uint16_t time3 = 0;
-int testCount = 0;
-
-uint16_t time4 = 0;
-uint16_t time5 = 0;
-int testCount2 = 0;
 
 void loop() {
-  if(millis()-time4>1000){
-    Serial.println(testCount2);
-    testCount2 = 0;
-    time4=millis();
-  }
 
-  
-  // START ANGLE CALCULATION
-  if(interuptReceived){
-//    if(getInteruptStatus(MPU_ADDRESS) & 1 == 1) {
-      readMainSensors(MPU_ADDRESS);
-//    }
-    if(sensorRead){ //following calcs take ~980us (seems pretty short)
-                    // and this section runs 500 times per second (does that sound right?)
-      testCount2 += 1;
-      updateBuffers();  // 40us
-      smoothData(); // 128us
-      calcAnglesAccel(); // 600us - although could this be reduced?
-      calcGyroChange(); // 136us
-      updateGyroAngles(); // 36us
+  //  if(countLoop > 100) {
+  //    countLoop = 0;
+  //    lastLoop = millis();
+  //    Serial.print("Milliseconds for 100 main loops: ");
+  //    Serial.println(lastLoop - firstLoop);
+  //    firstLoop = lastLoop;
+  //  }
+  //  countLoop += 1;
 
-      mixAngles();  // 84us
+  // if programming failed, don't try to do anything
+  if (!dmpReady) return;
 
-      
-//      time1 = micros(); // start time
-//      time2 = micros(); // finish time
-//      testCount += 1;
-//      time3 += (time2 - time1);
-//      if(testCount=1000){
-//        Serial.println(time3);
-//        testCount = 0;
-//        time3 = 0;
-//      }
-      
-      
-//    sendSerialDataFloat(currentMixedAngle.x * RAD_TO_DEG,currentMixedAngle.y * RAD_TO_DEG,currentMixedAngle.z * RAD_TO_DEG);
-    }   
-  interuptReceived = false;
+  // wait for MPU interrupt or extra packet(s) available
+  while (!mpuInterrupt && fifoCount < packetSize) {
 
-  }
-  // FINISH ANGLE CALCULATION
+    /////////////////////////////////////////
+    // MY CODE
 
-  
-
-
-  nowCalc = millis();
-  if(nowCalc-lastCalc > 0){  
-      
-//      Serial.println(millis());
-      
-    lastCalc = nowCalc;
-    actual = currentMixedAngle.y * RAD_TO_DEG;
-//    Serial.print(actual);Serial.print("\t");
-//    Serial.println(actual);
-    
-    output = pidY.calculate(target,actual);
-//    Serial.print(output);Serial.print("\t");
-
-    // if motor changing direction then stop first
-    if((output>0 && lastOutput<0) || (output<0 && lastOutput>0)){
-      Stop();
+    if (newSetting) {
+      updateSettings();
     }
-  
-    modOutput = (int)output;
-//    Serial.println(modOutput);
 
-      if(modOutput>0){
-          modOutput = min(modOutput,255); //cap at 255
-          modOutput = map(modOutput,0,255,100,255); // remap lowest output to 80
-          GoForwards(modOutput);
-  
+    nowCalc = millis();
+    if (nowCalc - lastCalc > 20) {
+
+      lastCalc = nowCalc;
+      actual = ypr[1] * 180 / M_PI;
+      //    Serial.print(actual);Serial.print("\t");
+//                  Serial.println(actual);
+      myPID.Compute();
+//      output = pidY.calculate(target, actual);
+      //    Serial.print(output);Serial.print("\t");
+//                Serial.println(output);
+
+      // if motor changing direction then stop first
+      if ((output > 0 && lastOutput < 0) || (output < 0 && lastOutput > 0)) {
+        Stop();
       }
-      else if(modOutput<0){
-          modOutput = -modOutput;
-          modOutput = min(modOutput,255); //cap at 255
-          modOutput = map(modOutput,0,255,100,255); // remap lowest output to 80
-          GoBackwards(modOutput);
+
+      modOutput = (int)output;
+      //              Serial.print(actual);Serial.print('\t');
+      //              Serial.print(actual-target);Serial.print('\t');
+      //              Serial.print(output);Serial.print('\t');
+      //              Serial.print(modOutput);Serial.print('\t');
+
+      if (modOutput > 0) {
+        modOutput = min(modOutput, 255); // cap at 255
+        modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
+        //            Serial.println(modOutput);
+        GoForwards(modOutput);
+
       }
-    
+      else if (modOutput < 0) {
+        modOutput = -modOutput;
+        modOutput = min(modOutput, 255); // cap at 255
+        modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
+        //            Serial.println(modOutput);
+        GoBackwards(modOutput);
+      }
+//      else {
+//        Stop();
+//      }
+//      Serial.println(modOutput);
+
       lastOutput = output;
-    
+
+    }
+
+    // END MY CODE
+    /////////////////////////////////////////
   }
- }
 
-///////////////////////////////////////////////////////////////////////////////////
-//    INTERUPT ROUTINE
+  // reset interrupt flag and get INT_STATUS byte
+  mpuInterrupt = false;
+  mpuIntStatus = mpu.getIntStatus();
 
-void mpuInterupt(){
-  interuptReceived = true;
+  // get current FIFO count
+  fifoCount = mpu.getFIFOCount();
+
+  // check for overflow (this should never happen unless our code is too inefficient)
+  if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+    // reset so we can continue cleanly
+    mpu.resetFIFO();
+    Serial.println(F("FIFO overflow!"));
+
+    // otherwise, check for DMP data ready interrupt (this should happen frequently)
+  } else if (mpuIntStatus & 0x02) {
+    // wait for correct available data length, should be a VERY short wait
+    while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+
+    // read a packet from FIFO
+    mpu.getFIFOBytes(fifoBuffer, packetSize);
+
+    // track FIFO count here in case there is > 1 packet available
+    // (this lets us immediately read more without waiting for an interrupt)
+    fifoCount -= packetSize;
+
+    // display Euler angles in degrees
+    mpu.dmpGetQuaternion(&q, fifoBuffer);
+    mpu.dmpGetGravity(&gravity, &q);
+    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+
+  }
 }
 
+
+///////////////////////////////////////////////////////////////////////////////////
+// FOR CHANGING SETTINGS
+
+void serialEvent() {
+  setting = Serial.read();
+  newSetting = true;
+}
+
+
+void updateSettings() {
+  if (newSetting) {
+    switch (setting) {
+      case 'p':
+        kP += 1.0;
+        Serial.println(kP);
+        break;
+      case ';':
+        kP -= 1.0;
+        Serial.println(kP);
+        break;
+      case 'i':
+        kI += 1.0;
+        Serial.println(kI);
+        break;
+      case 'k':
+        kI -= 1.0;
+        Serial.println(kI);
+        break;
+      case 'd':
+        kD += 0.5;
+        Serial.println(kD);
+        break;
+      case 'c':
+        kD -= 0.5;
+        Serial.println(kD);
+        break;
+      case 't':
+        target += 0.5;
+        Serial.println(target);
+        break;
+      case 'g':
+        target -= 0.5;
+        Serial.println(target);
+        break;
+    }
+//    pidY.setFactors(kP, kI, kD);
+    myPID.SetTunings(kP, kI, kD);
+    newSetting = false;
+  }
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////////
 // OUTPUT
 
-void sendSerialDataFloat(float one, float two, float three){
-    Serial.print(one); Serial.print('\t');
-    Serial.print(two); Serial.print('\t');
-    Serial.print(three); Serial.print('\t');
-    Serial.print('\n');
+void sendSerialDataFloat(float one, float two, float three) {
+  Serial.print(one); Serial.print('\t');
+  Serial.print(two); Serial.print('\t');
+  Serial.print(three); Serial.print('\t');
+  Serial.print('\n');
 }
 
-void sendSerialDataInt(int one, int two, int three){
-    Serial.print(one); Serial.print('\t');
-    Serial.print(two); Serial.print('\t');
-    Serial.print(three); Serial.print('\t');
-    Serial.print('\n');
+void sendSerialDataInt(int one, int two, int three) {
+  Serial.print(one); Serial.print('\t');
+  Serial.print(two); Serial.print('\t');
+  Serial.print(three); Serial.print('\t');
+  Serial.print('\n');
 }
 
-
-
-///////////////////////////////////////////////////////////////////////////////////
-///         SETUP MPU-6050
-
-void setupMPU(){
-  writeBitsNew(MPU_ADDRESS,PWR_MGMT_1,7,1,1);  // resets the device
-  delay(50);  // delay desirable after reset
-  writeRegister(MPU_ADDRESS,PWR_MGMT_1,0);  // wake up the MPU-6050
-//  writeBits(MPU_ADDRESS,INT_PIN_CFG,0,1,0); // Set interupt Active High - this is already default
-  writeBitsNew(MPU_ADDRESS,INT_ENABLE,0,1,1); // Enable Data Ready interupt
-  writeBitsNew(MPU_ADDRESS,CONFIG,0,3,1); // set low pass filter
-  writeBitsNew(MPU_ADDRESS,PWR_MGMT_1,0,3,1); // sets clock source to X axis gyro (as recommended in user guide)
-}
-
-///////////////////////////////////////////////////////////////////////////////////
-//          INTERACTING WITH MPU-6050
-
-// ADD GENERAL FUNCTION TO READ MULTIPLE REGISTERS
-
-void writeRegister(byte address, byte sensorRegister, byte data) {
- i2cTimeout = I2c.write(address,sensorRegister,data); // start transmission to device
-} 
-
-byte readRegister(byte address, byte sensorRegister) {
- i2cTimeout = I2c.read(address, sensorRegister, 1);
- return I2c.receive();
-} 
-
-
-// there's already a write bits function which has been used instead of my own???
-void writeBitsNew(byte address, byte registerToWrite,byte startingReplacementBit, byte noReplacementBits, byte replacementValue){
-  byte originalregisterValue = readRegister(address,registerToWrite);
-  byte newRegisterValue = modifyBits(originalregisterValue,startingReplacementBit,noReplacementBits,replacementValue);
-  writeRegister(address,registerToWrite,newRegisterValue);
-}
-
-
-void writeBitsNew2(byte address, byte registerToWrite, byte originalReading, byte startingReplacementBit, byte noReplacementBits, byte replacementValue){
-  byte newRegisterValue = modifyBits(originalReading,startingReplacementBit,noReplacementBits,replacementValue);
-  writeRegister(address,registerToWrite,newRegisterValue);
-}
-
-int readBitsNew(byte address, byte registerToRead,byte startingBit, byte noOfBits){
-  byte registerVal = readRegister(address,registerToRead);
-  
-  // create mask that will just have 1s in bits of interest
-  // apply mask to read value
-  //return
-  return registerVal; //placeholder
-}
-
-void readMainSensors(byte address) {
-  //
-  lastReadingTime = thisReadingTime;
-  thisReadingTime = millis();
-  I2c.read(address, ACCEL_XOUT_H, 14);
-  // read the most significant bit register into the variable then shift to the left
-  // and binary add the least significant
-  if(I2c.available()==14){
-  AcX=I2c.receive()<<8|I2c.receive();  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)  
-  AcY=I2c.receive()<<8|I2c.receive();  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-  AcZ=I2c.receive()<<8|I2c.receive();  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-  Tmp=I2c.receive()<<8|I2c.receive();  // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
-  GyX=I2c.receive()<<8|I2c.receive();  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-  GyY=I2c.receive()<<8|I2c.receive();  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-  GyZ=I2c.receive()<<8|I2c.receive();  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
-  sensorRead = true;
-  }
-  else {
-    sensorRead = false;
-//    Serial.println(I2c.available());
-    flushI2cBuffer();
-  }
-} 
-
-byte getInteruptStatus(byte address){
-  return readRegister(address,INT_STATUS);
-}
-
-void flushI2cBuffer(){
-  while(I2c.available()){
-    I2c.receive();
-  }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////////
-
-
-///////////////////////////////////////////////////////////////////////////////////
-//                  CALIBRATE??
-
-
-
-
-
-///////////////////////////////////////////////////////////////////////////////////
-
-
-///////////////////////////////////////////////////////////////////////////////////
-//            RECORDING HISTORY AND SMOOTHING
-
-
-void checkReadings(){
-  // check reading against previous
-  // ideally want to check against next reading as well
-  // not sure required - low pass filter seems to remove wierd readings
-  
-}
-
-
-
-void updateBuffers(){
-  // keeps track of totals so they don't need to be calculated each time
-  
-  // remove old value from total
-  bufferAcXSum -= bufferAcX[bufferPos];
-  bufferAcYSum -= bufferAcY[bufferPos];
-  bufferAcZSum -= bufferAcZ[bufferPos];
-  bufferGyXSum -= bufferGyX[bufferPos];
-  bufferGyYSum -= bufferGyY[bufferPos];
-  bufferGyZSum -= bufferGyZ[bufferPos];
-  // add new value to buffer
-  bufferTime[bufferPos] = thisReadingTime;
-  bufferAcX[bufferPos] = AcX;
-  bufferAcY[bufferPos] = AcY;
-  bufferAcZ[bufferPos] = AcZ;
-  bufferGyX[bufferPos] = GyX - GyXOffset;
-  bufferGyY[bufferPos] = GyY - GyYOffset;
-  bufferGyZ[bufferPos] = GyZ - GyZOffset;
-  // add new value to sum
-  bufferAcXSum += bufferAcX[bufferPos];
-  bufferAcYSum += bufferAcY[bufferPos];
-  bufferAcZSum += bufferAcZ[bufferPos];
-  bufferGyXSum += bufferGyX[bufferPos];
-  bufferGyYSum += bufferGyY[bufferPos];
-  bufferGyZSum += bufferGyZ[bufferPos];  
-  // increment buffer position and wrap if reach end
-  lastBufferPos = bufferPos;
-  bufferPos += 1;
-  if(bufferPos == bufferSize) bufferPos = 0; //reset position when get to end
-  
-}
-
-void smoothData(){
-  // note assumption that buffers have been filled
-  AcX = bufferAcXSum / bufferSize;
-  AcY = bufferAcYSum / bufferSize;
-  AcZ = bufferAcZSum / bufferSize;
-}
-
-///////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////
-//                PERFORMING CALCULATIONS WITH SENSOR MEASUREMENTS
-
-void calibrateGyro(int repetitions){
-  Serial.println(F("Calibrating gyro"));
-  long GyXSum = 0;
-  long GyYSum = 0;
-  long GyZSum = 0;
-  for(int i=0; i<repetitions; i++){
-    readMainSensors(MPU_ADDRESS);
-    // ADD STEP TO VALIDATE SENSOR READINGS
-    GyXSum += GyX;
-    GyYSum += GyY;
-    GyZSum += GyZ;
-  }
-  GyXOffset = GyXSum/repetitions;
-  GyYOffset = GyYSum/repetitions;
-  GyZOffset = GyZSum/repetitions;
-  Serial.println(F("Gyro offset values:"));
-  sendSerialDataInt(GyXOffset,GyYOffset,GyZOffset);
-}
-
-
-
-void initialiseCurrentGyroAngles(){
-  // this will need to run at the beginning to populate currentAngle
-  // just take average from buffer or run more times?
-  // buffer must be filled before running this
-  currentGyroAngle.x = currentAccelAngle.x;
-  currentGyroAngle.y = currentAccelAngle.y;
-  currentGyroAngle.z = currentAccelAngle.z;
-}
-
-// not used currently
-void convertReadingsToValues(){
-  valAcX = AcX * accelRes;
-  valAcY = AcY * accelRes;
-  valAcZ = AcZ * accelRes;
-  valGyX = GyX * gyroRes;
-  valGyY = GyY * gyroRes;
-  valGyZ = GyZ * gyroRes;
-}
-
-void calcAnglesAccel(){
-
-  currentAccelAngle.x = atan2(AcY,AcZ);
-  currentAccelAngle.y = atan2(AcX,AcZ);
-  currentAccelAngle.z = atan2(AcX,AcY);
-
-//    alternative calc
-//    tan-1(axis reading / sqrt(other axis ^2 + other axis^2))
-//    currentAccelAngle.x = atan(AcX/sqrt(pow(AcY,2) + pow(AcZ,2)));
-//    currentAccelAngle.y = atan(AcY/sqrt(pow(AcX,2) + pow(AcZ,2)));
-//    currentAccelAngle.z = atan(AcZ/sqrt(pow(AcY,2) + pow(AcX,2)));
-}
-
-void calcGyroChange(){
-  // lastBufferPos is the most recent measurement taken
-  // prevBufferPos is the reading before that
-  // I could change the updateBuffers function to update position at the beginning and then wouldn't need to create prevBufferPos
-  uint16_t prevBufferPos;
-  if (lastBufferPos==0) {prevBufferPos = bufferSize-1;}  //wrap
-  else {prevBufferPos = lastBufferPos - 1;}
-  uint16_t interval = (bufferTime[lastBufferPos] - bufferTime[prevBufferPos]) * 1000;
-  changeGyroAngle.x = ((bufferGyX[lastBufferPos] - bufferGyX[prevBufferPos]) * gyroRes) / interval;  // rad/s
-  changeGyroAngle.y = ((bufferGyY[lastBufferPos] - bufferGyY[prevBufferPos]) * gyroRes) / interval;  // rad/s
-  changeGyroAngle.z = ((bufferGyZ[lastBufferPos] - bufferGyZ[prevBufferPos]) * gyroRes) / interval;  // rad/s
-}
-
-void updateGyroAngles(){
-  currentGyroAngle.x = currentMixedAngle.x + changeGyroAngle.x;
-  currentGyroAngle.y = currentMixedAngle.y + changeGyroAngle.y;
-  currentGyroAngle.z = currentMixedAngle.z + changeGyroAngle.z;
-}
-
-float mixAnglesCalc(float angleGyro, float angleAccel, float weight){
-  float mixedAngle = (angleGyro * weight) + (angleAccel * (1-weight));
-  return mixedAngle;
-   // do I need to take into account quadrants at all?
-}
-
-void mixAngles(){
-  currentMixedAngle.x = mixAnglesCalc(currentGyroAngle.x, currentAccelAngle.x, mixParam);
-  currentMixedAngle.y = mixAnglesCalc(currentGyroAngle.y, currentAccelAngle.y, mixParam);
-  currentMixedAngle.z = mixAnglesCalc(currentGyroAngle.z, currentAccelAngle.z, mixParam);
-}
-
-///////////////////////////////////////////////////////////////////////////////////
-
-
-///////////////////////////////////////////////////////////////////////////////////
-//                OTHER SUPPORING FUNCTIONS
-
-byte modifyBits(byte originalByte, byte startingReplacementBit, byte noReplacementBits, byte replacementValue){
-  byte clearMask;
-  byte replaceMask;
-  byte newByte;
-  clearMask = (1<< noReplacementBits)-1;  // set required number of 1s
-  clearMask = clearMask << startingReplacementBit; // move to required position
-  clearMask = ~clearMask; // invert so that bits to overwrite are 0 in the mask
-  newByte = originalByte & clearMask; // apply mask and clear bits of interest
-  replaceMask = replacementValue << startingReplacementBit; // move replacement bits to correct position in mask
-  newByte = newByte | replaceMask; // apply mask
-  return newByte;
-}
 
 
 
@@ -576,39 +379,45 @@ byte modifyBits(byte originalByte, byte startingReplacementBit, byte noReplaceme
 //              MOTOR FUNCTIONALITY
 
 void GoForwards(int pwm) {
-      analogWrite(LeftForwardPin, pwm);
-      analogWrite(LeftReversePin, 0);
-      analogWrite(RightForwardPin, pwm);
-      analogWrite(RightReversePin, 0);
+  analogWrite(LeftPwmPin, pwm);
+  analogWrite(RightPwmPin, pwm);
+  digitalWrite(LeftForwardPin, HIGH);
+  digitalWrite(LeftReversePin, LOW);
+  digitalWrite(RightForwardPin, HIGH);
+  digitalWrite(RightReversePin, LOW);
 }
 
 void GoBackwards(int pwm) {
-      analogWrite(LeftForwardPin, 0);
-      analogWrite(LeftReversePin, pwm);
-      analogWrite(RightForwardPin, 0);
-      analogWrite(RightReversePin, pwm);
+  analogWrite(LeftPwmPin, pwm);
+  analogWrite(RightPwmPin, pwm);
+  digitalWrite(LeftForwardPin, LOW);
+  digitalWrite(LeftReversePin, HIGH);
+  digitalWrite(RightForwardPin, LOW);
+  digitalWrite(RightReversePin, HIGH);
 }
 
 
 void Stop() {
-      analogWrite(LeftForwardPin, 0);
-      analogWrite(LeftReversePin, 0);
-      analogWrite(RightForwardPin, 0);
-      analogWrite(RightReversePin, 0);
+  analogWrite(LeftPwmPin, 0);
+  analogWrite(RightPwmPin, 0);
+  digitalWrite(LeftForwardPin, LOW);
+  digitalWrite(LeftReversePin, LOW);
+  digitalWrite(RightForwardPin, LOW);
+  digitalWrite(RightReversePin, LOW);
 }
 
 //void TurnLeft(int pwm) {
 //      analogWrite(LeftForwardPin, 0);
-//      analogWrite(LeftReversePin, pwm);
-//      analogWrite(RightForwardPin, pwm);
+//      analogWrite(LeftReversePin, 255);
+//      analogWrite(RightForwardPin, 255);
 //      analogWrite(RightReversePin, 0);
 //}
 //
 //void TurnRight(int pwm) {
-//      analogWrite(LeftForwardPin, pwm);
+//      analogWrite(LeftForwardPin, 255);
 //      analogWrite(LeftReversePin, 0);
 //      analogWrite(RightForwardPin, 0);
-//      analogWrite(RightReversePin, pwm);
+//      analogWrite(RightReversePin, 255);
 //}
 
 
