@@ -144,7 +144,7 @@ void setup() {
 //   low pass filter
   byte dlpf = 0;
   mpu.setDLPFMode(dlpf);
-  Serial.print(F("DLPF; ")); Serial.println(dlpf);
+  Serial.print(F("DLPF: ")); Serial.println(dlpf);
 
   // make sure it worked (returns 0 if so)
   if (devStatus == 0) {
@@ -177,7 +177,6 @@ void setup() {
   unsigned long tmp;
   tmp = millis();
   while(millis()-tmp<3000){
-    
   }
   mpu.resetFIFO();
 
@@ -193,7 +192,7 @@ void setup() {
   Serial.print(F("Target angle to maintain: ")); Serial.println(target);
 
   myPID.SetOutputLimits(-255, 255);
-  myPID.SetSampleTime(10);
+  myPID.SetSampleTime(1);
   myPID.SetMode(AUTOMATIC);
 
   
@@ -317,7 +316,10 @@ void loop() {
     // display Euler angles in degrees
     mpu.dmpGetQuaternion(&q, fifoBuffer);
     mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetPitch(ypr, &q, &gravity);
+    //mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+    mpu.dmpGetPitch(ypr, &q, &gravity); // only calculating the pitch, don't need the others
+
+    
 
   }
 }
