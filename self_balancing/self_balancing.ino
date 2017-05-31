@@ -85,7 +85,7 @@ char setting;
 
 
 //Specify the links and initial tuning parameters
-double kP=33, kI=3, kD=0.12;
+double kP=33, kI=0, kD=0.12;
 PID myPID(&actual, &output, &target, kP, kI, kD, REVERSE);
 
 
@@ -225,25 +225,26 @@ void loop() {
       actual = ypr[1] * 180 / M_PI;
       //    Serial.print(actual);Serial.print("\t");
 //                  Serial.println(actual);
+                  Serial.print(target);Serial.print('\t');Serial.println(actual);
 
 
       // check that robot is in a recoverable position (i.e. close to upright)
 
-      if (actual>(target-recoverableRange) && actual<(target+recoverableRange)){
-        if(STATE==LYING_DOWN){
-          myPID.SetMode(AUTOMATIC); // turn PID back on
-        }
-        STATE = UPRIGHT;
-      }
-    else {
-        STATE = LYING_DOWN;
-        myPID.SetMode(MANUAL);  // turn off, don't want to accumulate errors
-                                // not certain this is working properly, seems to have offset when put down and then back upright
-        Stop();
-      }
-//      Serial.print(actual);Serial.print("\t");
-//      Serial.print(target-recoverableRange);Serial.print("\t");
-//      Serial.println(STATE);
+//      if (actual>(target-recoverableRange) && actual<(target+recoverableRange)){
+//        if(STATE==LYING_DOWN){
+//          myPID.SetMode(AUTOMATIC); // turn PID back on
+//        }
+//        STATE = UPRIGHT;
+//      }
+//    else {
+//        STATE = LYING_DOWN;
+//        myPID.SetMode(MANUAL);  // turn off, don't want to accumulate errors
+//                                // not certain this is working properly, seems to have offset when put down and then back upright
+//        Stop();
+//      }
+
+
+      STATE = UPRIGHT;
 
       if(STATE == UPRIGHT){
       myPID.Compute();
