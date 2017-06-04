@@ -217,6 +217,8 @@ void loop() {
     /////////////////////////////////////////
     // MY CODE
 
+    checkForCommands();
+
     if (newSetting) {
       updateSettings();
     }
@@ -329,7 +331,8 @@ void loop() {
 ///////////////////////////////////////////////////////////////////////////////////
 // FOR CHANGING SETTINGS
 
-void serialEvent() {
+// assumes commands are not continuously sent
+void checkForCommands() {
   setting = Serial.read();
   newSetting = true;
 }
@@ -371,11 +374,11 @@ void updateSettings() {
         Serial.println(target);
         break;
       case 'w':
-        target += 2;
+        target += 1;
         Serial.println(target);
         break;
       case 's':
-        target -= 2;
+        target -= 1;
         Serial.println(target);
         break;       
     }
