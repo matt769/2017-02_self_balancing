@@ -8,6 +8,8 @@
 
 
 #include <PID_v1.h>
+#include <SoftwareSerial.h>
+
 
 // Based on MPU_6050_DMP6 sketch by Jeff Rowberg
 
@@ -94,6 +96,9 @@ unsigned long firstLoop = 0;
 unsigned long lastLoop = 0;
 int countLoop = 0;
 
+// set up serial connection
+SoftwareSerial sSerial1(12,13); // to RX, TX of BT module
+
 
 ///////////////////////////////////////////////////////////////////////////////////
 //              SETUP
@@ -108,7 +113,8 @@ void setup() {
 #endif
 
   // initialize serial communication
-  Serial.begin(115200);
+  Serial.begin(115200);   // from computer
+  sSerial1.begin(115200); //from bluetooth module
 
   // initialize device
   Serial.println(F("Initializing I2C devices..."));
@@ -227,7 +233,7 @@ void loop() {
       actual = ypr[1] * 180 / M_PI;
       //    Serial.print(actual);Serial.print("\t");
 //                  Serial.println(actual);
-                  Serial.print(target);Serial.print('\t');Serial.println(actual);
+//                  Serial.print(target);Serial.print('\t');Serial.println(actual);
 
 
       // check that robot is in a recoverable position (i.e. close to upright)
@@ -333,8 +339,14 @@ void loop() {
 
 // assumes commands are not continuously sent
 void checkForCommands() {
-  setting = Serial.read();
-  newSetting = true;
+  if(Serial.available()){
+    setting = Serial.read();
+    newSetting = true;
+  }
+  if(sSerial1.available()){
+    setting = sSerial1.read();
+    newSetting = true;
+  }
 }
 
 
