@@ -211,7 +211,7 @@ void setup() {
 ///////////////////////////////////////////////////////////////////////////////////
 //                  MAIN
 
-
+bool tst;
 void loop() {
 
   // if programming failed, don't try to do anything
@@ -255,7 +255,9 @@ void loop() {
       STATE = UPRIGHT;
 
       if(STATE == UPRIGHT){
-      myPID.Compute();
+        
+      if(myPID.Compute()){  // if the PID has not recalculated then no need to update motors
+      
 //      output = pidY.calculate(target, actual);
       //    Serial.print(output);Serial.print("\t");
 //                Serial.println(output);
@@ -292,7 +294,7 @@ void loop() {
 
       lastOutput = output;
       }
-
+      }
     // END MY CODE
     /////////////////////////////////////////
   }
