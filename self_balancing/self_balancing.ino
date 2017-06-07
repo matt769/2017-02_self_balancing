@@ -198,7 +198,7 @@ void setup() {
   Serial.print(F("Target angle to maintain: ")); Serial.println(target);
 
   myPID.SetOutputLimits(-255, 255);
-  myPID.SetSampleTime(1);
+  myPID.SetSampleTime(4);
   myPID.SetMode(AUTOMATIC);
 
   
@@ -211,8 +211,35 @@ void setup() {
 ///////////////////////////////////////////////////////////////////////////////////
 //                  MAIN
 
-bool tst;
+int counterMain = 0;
+long counterWhile = 0;
+long counterPID = 0;
+unsigned long timeMainStart = 0;
+unsigned long timeWhile = 0;
+unsigned long timeWhileTmp = 0;
+
 void loop() {
+  if(counterMain==0){
+    timeMainStart = millis();
+  }
+  
+  counterMain += 1;
+  
+  if(counterMain==1000){
+    Serial.print(F("Main loop count: "));Serial.println(counterMain);
+    Serial.print(F("Main loop time: "));Serial.println(millis()-timeMainStart);
+    Serial.print(F("While loop count: "));Serial.println(counterWhile);
+    Serial.print(F("While loop time: "));Serial.println(timeWhile);
+    Serial.print(F("PID count: "));Serial.println(counterPID);
+    counterMain = 0;
+    counterWhile = 0;
+    counterPID = 0;
+    timeMainStart = 0;
+    timeWhile = 0;
+  }
+
+
+//    Serial.println(counterMain);
 
   // if programming failed, don't try to do anything
   if (!dmpReady) return;
@@ -223,13 +250,16 @@ void loop() {
     /////////////////////////////////////////
     // MY CODE
 
+    counterWhile += 1;
+    timeWhileTmp = millis();
+    
     checkForCommands();
 
     if (newSetting) {
       updateSettings();
     }
 
-      // pitch angle in degrees
+      // pitch angle in degrees // MOVE TO AFTER GETDMP CALC
       actual = ypr[1] * 180 / M_PI;
       //    Serial.print(actual);Serial.print("\t");
 //                  Serial.println(actual);
@@ -257,11 +287,9 @@ void loop() {
       if(STATE == UPRIGHT){
         
       if(myPID.Compute()){  // if the PID has not recalculated then no need to update motors
-      
-//      output = pidY.calculate(target, actual);
-      //    Serial.print(output);Serial.print("\t");
-//                Serial.println(output);
 
+      counterPID += 1;
+      
       // if motor changing direction then stop first
       if ((output > 0 && lastOutput < 0) || (output < 0 && lastOutput > 0)) {
         Stop();
@@ -274,7 +302,7 @@ void loop() {
       //              Serial.print(modOutput);Serial.print('\t');
 
       if (modOutput > 0) {
-        modOutput = min(modOutput, 255); // cap at 255
+        modOutput = min(modOutput, 255); // cap at 255  // should be able to remove this, covered in PID controller
         modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
         //            Serial.println(modOutput);
         GoForwards(modOutput);
@@ -282,7 +310,7 @@ void loop() {
       }
       else if (modOutput < 0) {
         modOutput = -modOutput;
-        modOutput = min(modOutput, 255); // cap at 255
+        modOutput = min(modOutput, 255); // cap at 255  // should be able to remove this, covered in PID controller
         modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
         //            Serial.println(modOutput);
         GoBackwards(modOutput);
@@ -294,6 +322,7 @@ void loop() {
 
       lastOutput = output;
       }
+      timeWhile += millis()-timeWhileTmp;
       }
     // END MY CODE
     /////////////////////////////////////////
