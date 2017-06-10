@@ -58,17 +58,17 @@ void dmpDataReady() {
 // all covered in I2Cdec now
 
 // Motor functionality
-const int LeftForwardPin = 9;
-const int LeftReversePin = 8;
+const int LeftForwardPin = 8;
+const int LeftReversePin = 9;
 const int RightForwardPin = 10;
 const int RightReversePin = 11;
 const int LeftPwmPin = 5;
 const int RightPwmPin = 6;
-const int MOTOR_MIN_PWM = 110;
+const int MOTOR_MIN_PWM = 35;
 
 
 // balance + PID controller
-double target = 10.0;
+double target = 8.0;
 double actual;
 double output;
 double lastOutput;
@@ -87,7 +87,7 @@ char setting;
 
 
 //Specify the links and initial tuning parameters
-double kP=33, kI=0, kD=0.12;
+double kP=20, kI=0, kD=0.0;
 PID myPID(&actual, &output, &target, kP, kI, kD, REVERSE);
 
 
@@ -226,11 +226,11 @@ void loop() {
   counterMain += 1;
   
   if(counterMain==1000){
-    Serial.print(F("Main loop count: "));Serial.println(counterMain);
-    Serial.print(F("Main loop time: "));Serial.println(millis()-timeMainStart);
-    Serial.print(F("While loop count: "));Serial.println(counterWhile);
-    Serial.print(F("While loop time: "));Serial.println(timeWhile);
-    Serial.print(F("PID count: "));Serial.println(counterPID);
+//    Serial.print(F("Main loop count: "));Serial.println(counterMain);
+//    Serial.print(F("Main loop time: "));Serial.println(millis()-timeMainStart);
+//    Serial.print(F("While loop count: "));Serial.println(counterWhile);
+//    Serial.print(F("While loop time: "));Serial.println(timeWhile);
+//    Serial.print(F("PID count: "));Serial.println(counterPID);
     counterMain = 0;
     counterWhile = 0;
     counterPID = 0;
@@ -481,6 +481,15 @@ void Stop() {
   digitalWrite(LeftReversePin, LOW);
   digitalWrite(RightForwardPin, LOW);
   digitalWrite(RightReversePin, LOW);
+}
+
+void Brake() {
+  analogWrite(LeftPwmPin, 255);
+  analogWrite(RightPwmPin, 255);
+  digitalWrite(LeftForwardPin, HIGH);
+  digitalWrite(LeftReversePin, HIGH);
+  digitalWrite(RightForwardPin, HIGH);
+  digitalWrite(RightReversePin, HIGH);
 }
 
 //void TurnLeft(int pwm) {
