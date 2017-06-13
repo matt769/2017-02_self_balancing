@@ -64,11 +64,11 @@ const int RightForwardPin = 10;
 const int RightReversePin = 11;
 const int LeftPwmPin = 5;
 const int RightPwmPin = 6;
-const int MOTOR_MIN_PWM = 35;
+const int MOTOR_MIN_PWM = 25;
 
 
 // balance + PID controller
-double target = 8.0;
+double target = 9.0;
 double actual;
 double output;
 double lastOutput;
@@ -84,10 +84,11 @@ byte STATE = LYING_DOWN;
 //float kP, kI, kD;
 bool newSetting = false;
 char setting;
+bool newReading = false; //to indicate a new reading has been retrieved
 
 
 //Specify the links and initial tuning parameters
-double kP=20, kI=0, kD=0.0;
+double kP=38, kI=0, kD=0.2;
 PID myPID(&actual, &output, &target, kP, kI, kD, REVERSE);
 
 
@@ -259,6 +260,7 @@ void loop() {
       updateSettings();
     }
 
+    if(newReading){
       // pitch angle in degrees // MOVE TO AFTER GETDMP CALC
       actual = ypr[1] * 180 / M_PI;
       //    Serial.print(actual);Serial.print("\t");
@@ -324,6 +326,8 @@ void loop() {
       }
       timeWhile += millis()-timeWhileTmp;
       }
+     newReading = false; 
+    }
     // END MY CODE
     /////////////////////////////////////////
   }
@@ -358,7 +362,7 @@ void loop() {
     mpu.dmpGetGravity(&gravity, &q);
     //mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
     mpu.dmpGetPitch(ypr, &q, &gravity); // only calculating the pitch, don't need the others
-
+    newReading = true;
     
 
   }
