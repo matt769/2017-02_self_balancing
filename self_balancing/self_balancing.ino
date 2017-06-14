@@ -1,17 +1,12 @@
-//try using Jeff Rowburg code to get angle
-// based on MPU6050_DMP6.ino sketch
-// I used a new MPU6050 because I needed to change the orientation - the pitch wasn't calculated well as it was
-// I have recalculated gyro offsets
+// communication with MPU-6050 handled by Jeff Rowberg's code which can be found here:
+// https://github.com/jrowberg/i2cdevlib/tree/master/Arduino/MPU6050
 
-// try to copy this code:
-// http://www.instructables.com/id/2-Wheel-Self-Balancing-Robot-by-using-Arduino-and-/
+// PID controller by Brett Beauregard, code can be found here
+// https://github.com/br3ttb/Arduino-PID-Library/
 
 
 #include <PID_v1.h>
 #include <SoftwareSerial.h>
-
-
-// Based on MPU_6050_DMP6 sketch by Jeff Rowberg
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
 // for both classes must be in the include path of your project
@@ -25,6 +20,9 @@
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
 #include "Wire.h"
 #endif
+
+///////////////////////////////////////////////////////////////////////////////////
+//              MPU
 
 // class default I2C address is 0x68 - AD0 low = 0x68
 MPU6050 mpu;
@@ -43,21 +41,20 @@ VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
+bool newReading = false; //to indicate a new reading has been retrieved
 
-
-// ================================================================
-// ===               INTERRUPT DETECTION ROUTINE                ===
-// ================================================================
+///////////////////////////////////////////////////////////////////////////////////
+//              INTERUPT ROUTINE
 
 volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
 void dmpDataReady() {
   mpuInterrupt = true;
 }
 
-// MPU Register addresses
-// all covered in I2Cdec now
 
-// Motor functionality
+///////////////////////////////////////////////////////////////////////////////////
+//              MOTOR FUNCTIONALITY
+
 const int LeftForwardPin = 8;
 const int LeftReversePin = 9;
 const int RightForwardPin = 10;
@@ -67,38 +64,40 @@ const int RightPwmPin = 6;
 const int MOTOR_MIN_PWM = 25;
 
 
-// balance + PID controller
+///////////////////////////////////////////////////////////////////////////////////
+//            Balance and PID controller
 double target = 9.0;
 double actual;
 double output;
 double lastOutput;
 int modOutput;
-long lastCalc = 0;
-long nowCalc;
 double recoverableRange = 30.0;
 byte UPRIGHT = 1;
 byte LYING_DOWN = 0;
 byte STATE = LYING_DOWN;
 
-//PID pidY; // with current orientation, Y corresponds to forwards/backwards
-//float kP, kI, kD;
-bool newSetting = false;
-char setting;
-bool newReading = false; //to indicate a new reading has been retrieved
-
-
-//Specify the links and initial tuning parameters
-double kP=38, kI=0, kD=0.2;
+double kP = 38, kI = 0, kD = 0.2;
 PID myPID(&actual, &output, &target, kP, kI, kD, REVERSE);
 
+///////////////////////////////////////////////////////////////////////////////////
+//          User Control
+bool newSetting = false;
+char setting;
 
-// check loop timings
-unsigned long firstLoop = 0;
-unsigned long lastLoop = 0;
-int countLoop = 0;
+///////////////////////////////////////////////////////////////////////////////////
+//          For checking loop timings
+int counterMain = 0;
+long counterWhile = 0;
+long counterPID = 0;
+unsigned long timeMainStart = 0;
+unsigned long timeWhile = 0;
+unsigned long timeWhileTmp = 0;
+
+///////////////////////////////////////////////////////////////////////////////////
+//          Other
 
 // set up serial connection
-SoftwareSerial sSerial1(12,13); // to RX, TX of BT module
+SoftwareSerial sSerial1(12, 13); // to RX, TX of BT module
 
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -129,26 +128,12 @@ void setup() {
   Serial.println(F("Initializing DMP..."));
   devStatus = mpu.dmpInitialize();
 
-  // supply your own gyro offsets here, scaled for min sensitivity
   mpu.setXGyroOffset(-343);
   mpu.setYGyroOffset(-232);
   mpu.setZGyroOffset(28);
   mpu.setZAccelOffset(847);
-  target = 10.0;
 
-// using the calibrate MPU sketch
-//  mpu.setXGyroOffset(-83);
-//  mpu.setYGyroOffset(-55);
-//  mpu.setZGyroOffset(10);
-//  mpu.setXAccelOffset(-1682);
-//  mpu.setYAccelOffset(-2454);
-//  mpu.setZAccelOffset(847);
-//  target = -1.5;
-
-
-
-
-//   low pass filter
+  //   low pass filter
   byte dlpf = 0;
   mpu.setDLPFMode(dlpf);
   Serial.print(F("DLPF: ")); Serial.println(dlpf);
@@ -183,7 +168,7 @@ void setup() {
   // allow MPU to settle
   unsigned long tmp;
   tmp = millis();
-  while(millis()-tmp<3000){
+  while (millis() - tmp < 3000) {
   }
   mpu.resetFIFO();
 
@@ -202,7 +187,7 @@ void setup() {
   myPID.SetSampleTime(4);
   myPID.SetMode(AUTOMATIC);
 
-  
+
   Serial.println(F("Setup complete"));
 }
 
@@ -212,35 +197,24 @@ void setup() {
 ///////////////////////////////////////////////////////////////////////////////////
 //                  MAIN
 
-int counterMain = 0;
-long counterWhile = 0;
-long counterPID = 0;
-unsigned long timeMainStart = 0;
-unsigned long timeWhile = 0;
-unsigned long timeWhileTmp = 0;
-
 void loop() {
-  if(counterMain==0){
+  if (counterMain == 0) {
     timeMainStart = millis();
   }
-  
   counterMain += 1;
-  
-  if(counterMain==1000){
-//    Serial.print(F("Main loop count: "));Serial.println(counterMain);
-//    Serial.print(F("Main loop time: "));Serial.println(millis()-timeMainStart);
-//    Serial.print(F("While loop count: "));Serial.println(counterWhile);
-//    Serial.print(F("While loop time: "));Serial.println(timeWhile);
-//    Serial.print(F("PID count: "));Serial.println(counterPID);
+
+  if (counterMain == 1000) {
+    // Serial.print(F("Main loop count: "));Serial.println(counterMain);
+    // Serial.print(F("Main loop time: "));Serial.println(millis()-timeMainStart);
+    // Serial.print(F("While loop count: "));Serial.println(counterWhile);
+    // Serial.print(F("While loop time: "));Serial.println(timeWhile);
+    // Serial.print(F("PID count: "));Serial.println(counterPID);
     counterMain = 0;
     counterWhile = 0;
     counterPID = 0;
     timeMainStart = 0;
     timeWhile = 0;
   }
-
-
-//    Serial.println(counterMain);
 
   // if programming failed, don't try to do anything
   if (!dmpReady) return;
@@ -249,86 +223,71 @@ void loop() {
   while (!mpuInterrupt && fifoCount < packetSize) {
 
     /////////////////////////////////////////
-    // MY CODE
+    /////////////////////////////////////////
+    /////////////////////////////////////////
 
     counterWhile += 1;
     timeWhileTmp = millis();
-    
-    checkForCommands();
 
+    checkForCommands();
     if (newSetting) {
       updateSettings();
     }
 
-    if(newReading){
-      // pitch angle in degrees // MOVE TO AFTER GETDMP CALC
-      actual = ypr[1] * 180 / M_PI;
-      //    Serial.print(actual);Serial.print("\t");
-//                  Serial.println(actual);
-//                  Serial.print(target);Serial.print('\t');Serial.println(actual);
+    if (newReading) {
 
+      // the following section is currently commented out because it is causing strange behaviour sometimes
+      // I believe I am not handling the turning on/off of the PID controller correctly
 
       // check that robot is in a recoverable position (i.e. close to upright)
-
-//      if (actual>(target-recoverableRange) && actual<(target+recoverableRange)){
-//        if(STATE==LYING_DOWN){
-//          myPID.SetMode(AUTOMATIC); // turn PID back on
-//        }
-//        STATE = UPRIGHT;
-//      }
-//    else {
-//        STATE = LYING_DOWN;
-//        myPID.SetMode(MANUAL);  // turn off, don't want to accumulate errors
-//                                // not certain this is working properly, seems to have offset when put down and then back upright
-//        Stop();
-//      }
-
-
+      //      if (actual>(target-recoverableRange) && actual<(target+recoverableRange)){
+      //        if(STATE==LYING_DOWN){
+      //          myPID.SetMode(AUTOMATIC); // turn PID back on
+      //        }
+      //        STATE = UPRIGHT;
+      //      }
+      //    else {
+      //        STATE = LYING_DOWN;
+      //        myPID.SetMode(MANUAL);  // turn off, don't want to accumulate errors
+      //                                // not certain this is working properly, seems to have offset when put down and then back upright
+      //        Stop();
+      //      }
       STATE = UPRIGHT;
 
-      if(STATE == UPRIGHT){
-        
-      if(myPID.Compute()){  // if the PID has not recalculated then no need to update motors
 
-      counterPID += 1;
-      
-      // if motor changing direction then stop first
-      if ((output > 0 && lastOutput < 0) || (output < 0 && lastOutput > 0)) {
-        Stop();
-      }
+      if (STATE == UPRIGHT) {
 
-      modOutput = (int)output;
-      //              Serial.print(actual);Serial.print('\t');
-      //              Serial.print(actual-target);Serial.print('\t');
-      //              Serial.print(output);Serial.print('\t');
-      //              Serial.print(modOutput);Serial.print('\t');
+        if (myPID.Compute()) { // if the PID has not recalculated then no need to update motors
 
-      if (modOutput > 0) {
-        modOutput = min(modOutput, 255); // cap at 255  // should be able to remove this, covered in PID controller
-        modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
-        //            Serial.println(modOutput);
-        GoForwards(modOutput);
+          counterPID += 1;
 
-      }
-      else if (modOutput < 0) {
-        modOutput = -modOutput;
-        modOutput = min(modOutput, 255); // cap at 255  // should be able to remove this, covered in PID controller
-        modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
-        //            Serial.println(modOutput);
-        GoBackwards(modOutput);
-      }
-//      else {
-//        Stop();
-//      }
-//      Serial.println(modOutput);
+          // if motor changing direction then stop first
+          if ((output > 0 && lastOutput < 0) || (output < 0 && lastOutput > 0)) {
+            Stop();
+          }
 
-      lastOutput = output;
+          modOutput = (int)output;
+
+          if (modOutput > 0) {
+            modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
+            GoForwards(modOutput);
+
+          }
+          else if (modOutput < 0) {
+            modOutput = -modOutput;
+            modOutput = map(modOutput, 0, 255, MOTOR_MIN_PWM, 255); //re-scale with the minimum the motor will turn at
+            GoBackwards(modOutput);
+          }
+
+          lastOutput = output;
+        }
+        timeWhile += millis() - timeWhileTmp;
       }
-      timeWhile += millis()-timeWhileTmp;
-      }
-     newReading = false; 
+      newReading = false;
     }
-    // END MY CODE
+
+    /////////////////////////////////////////
+    /////////////////////////////////////////
     /////////////////////////////////////////
   }
 
@@ -362,8 +321,10 @@ void loop() {
     mpu.dmpGetGravity(&gravity, &q);
     //mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
     mpu.dmpGetPitch(ypr, &q, &gravity); // only calculating the pitch, don't need the others
+    // pitch angle in degrees
+    actual = ypr[1] * 180 / M_PI;
     newReading = true;
-    
+
 
   }
 }
@@ -374,11 +335,11 @@ void loop() {
 
 // assumes commands are not continuously sent
 void checkForCommands() {
-  if(Serial.available()){
+  if (Serial.available()) {
     setting = Serial.read();
     newSetting = true;
   }
-  if(sSerial1.available()){
+  if (sSerial1.available()) {
     setting = sSerial1.read();
     newSetting = true;
   }
@@ -427,9 +388,9 @@ void updateSettings() {
       case 's':
         target -= 1;
         Serial.println(target);
-        break;       
+        break;
     }
-//    pidY.setFactors(kP, kI, kD);
+    //    pidY.setFactors(kP, kI, kD);
     myPID.SetTunings(kP, kI, kD);
     newSetting = false;
   }
@@ -486,29 +447,6 @@ void Stop() {
   digitalWrite(RightForwardPin, LOW);
   digitalWrite(RightReversePin, LOW);
 }
-
-void Brake() {
-  analogWrite(LeftPwmPin, 255);
-  analogWrite(RightPwmPin, 255);
-  digitalWrite(LeftForwardPin, HIGH);
-  digitalWrite(LeftReversePin, HIGH);
-  digitalWrite(RightForwardPin, HIGH);
-  digitalWrite(RightReversePin, HIGH);
-}
-
-//void TurnLeft(int pwm) {
-//      analogWrite(LeftForwardPin, 0);
-//      analogWrite(LeftReversePin, 255);
-//      analogWrite(RightForwardPin, 255);
-//      analogWrite(RightReversePin, 0);
-//}
-//
-//void TurnRight(int pwm) {
-//      analogWrite(LeftForwardPin, 255);
-//      analogWrite(LeftReversePin, 0);
-//      analogWrite(RightForwardPin, 0);
-//      analogWrite(RightReversePin, 255);
-//}
 
 
 
